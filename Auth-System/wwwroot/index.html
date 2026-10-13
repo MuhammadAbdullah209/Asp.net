@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auth System</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; margin: 0;
+         display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .card { background: #fff; padding: 28px; border-radius: 10px; width: 100%; max-width: 400px;
+          box-shadow: 0 2px 12px rgba(0,0,0,.1); margin: 20px; }
+  h2 { margin-top: 0; text-align: center; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; }
+  input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  button { width: 100%; margin-top: 18px; padding: 11px; background: #2563eb; color: #fff;
+           border: 0; border-radius: 6px; font-size: 15px; cursor: pointer; }
+  button:disabled { background: #93b4f0; cursor: wait; }
+  .links { text-align: center; margin-top: 14px; font-size: 14px; }
+  .links a { color: #2563eb; text-decoration: none; margin: 0 6px; }
+  .hint { font-size: 14px; text-align: center; }
+  input.invalid, select.invalid {
+    border: 2px solid #d92d20; background: #fff1f0; outline: none;
+    box-shadow: 0 0 0 3px rgba(217,45,32,.15);
+    animation: shake .3s;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  input.valid { border-color: #1a7f37; }
+  .field-error { color: #b42318; font-size: 12px; margin-top: 4px; min-height: 0; }
+  .view { display: none; }
+  .view.active { display: block; }
+  #msg { margin-top: 14px; padding: 10px; border-radius: 6px; font-size: 14px; display: none; }
+  #msg.error { display: block; background: #fde8e8; color: #b42318; }
+  #msg.ok { display: block; background: #e6f6ec; color: #1a7f37; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- LOGIN -->
+  <div class="view" id="v-login">
+    <h2>Login</h2>
+    <form data-form="login">
+      <label>Email</label><input name="email" type="text" inputmode="email" autocomplete="email" required>
+      <label>Password</label><input name="password" type="password" required>
+      <button>Login</button>
+    </form>
+    <div class="links"><a href="#forgot">Forgot password?</a><a href="#register">Create account</a></div>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="view" id="v-register">
+    <h2>Create account</h2>
+    <form data-form="register">
+      <label>First name</label><input name="firstName" required>
+      <label>Last name</label><input name="lastName" required>
+      <label>Date of birth</label><input name="dob" type="date" required>
+      <label>Gender</label>
+      <select name="gender"><option>Male</option><option>Female</option><option>Other</option></select>
+      <label>Email</label><input name="email" type="text" inputmode="email" autocomplete="email" required>
+      <label>Password</label><input name="password" type="password" minlength="8" required>
+      <label>Phone number</label><input name="phoneNumber" required>
+      <button>Register</button>
+    </form>
+    <div class="links">Already have an account? <a href="#login">Login</a></div>
+  </div>
+
+  <!-- VERIFY EMAIL -->
+  <div class="view" id="v-verify">
+    <h2>Verify your email</h2>
+    <p class="hint">Enter the token we sent to your email.</p>
+    <form data-form="verify">
+      <label>Email</label><input name="email" type="text" inputmode="email" autocomplete="email" required>
+      <label>Token</label><input name="token" required>
+      <button>Verify</button>
+    </form>
+    <div class="links"><a href="#register">Back to register</a></div>
+  </div>
+
+  <!-- FORGOT PASSWORD -->
+  <div class="view" id="v-forgot">
+    <h2>Forgot password</h2>
+    <form data-form="forgot">
+      <label>Email</label><input name="email" type="text" inputmode="email" autocomplete="email" required>
+      <button>Send reset link</button>
+    </form>
+    <div class="links"><a href="#reset">I already have a token</a><a href="#login">Back to login</a></div>
+  </div>
+
+  <!-- RESET PASSWORD -->
+  <div class="view" id="v-reset">
+    <h2>Reset password</h2>
+    <form data-form="reset">
+      <label>Email</label><input name="email" type="text" inputmode="email" autocomplete="email" required>
+      <label>Token</label><input name="token" required>
+      <label>New password</label><input name="newPassword" type="password" minlength="8" required>
+      <label>Confirm new password</label><input name="confirm" type="password" minlength="8" required>
+      <button>Reset password</button>
+    </form>
+    <div class="links"><a href="#login">Back to login</a></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="view" id="v-dashboard">
+    <h2 id="hello">Welcome</h2>
+    <p id="userEmail" class="hint"></p>
+    <button id="logout">Logout</button>
+  </div>
+
+  <div id="msg"></div>
+</div>
+
+<script>
+  const API = "/api/auth";
+  const views = ["login", "register", "verify", "forgot", "reset", "dashboard"];
+  const qs = new URLSearchParams(location.search);
+
+  // ---------- helpers ----------
+  async function postJson(url, body) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      let data = null;
+      try { data = await res.json(); } catch { }
+      return { ok: res.ok, status: res.status, data };
+    } catch {
+      return { ok: false, status: 0, data: { message: "Cannot reach the server." } };
+    }
+  }
+
+  function getMessage(r) {
+    if (r.data && r.data.message) return r.data.message;
+    if (r.data && r.data.errors) return Object.values(r.data.errors).flat().join(" ");
+    return "Something went wrong. Please try again.";
+  }
+
+  function showMsg(text, ok) {
+    const el = document.getElementById("msg");
+    el.textContent = text;
+    el.className = ok ? "ok" : "error";
+  }
+  function clearMsg() { document.getElementById("msg").className = ""; }
+
+  function formData(form) {
+    const o = {};
+    new FormData(form).forEach((v, k) => o[k] = typeof v === "string" ? v.trim() : v);
+    return o;
+  }
+
+  function go(view) { location.hash = "#" + view; }
+
+  // ---------- router ----------
+  function route() {
+    let view = location.hash.replace("#", "") || "login";
+    if (!views.includes(view)) view = "login";
+
+    const token = localStorage.getItem("token");
+    if (view === "dashboard" && !token) view = "login";
+    if (view === "login" && token) view = "dashboard";
+
+    views.forEach(v => document.getElementById("v-" + v).classList.toggle("active", v === view));
+    clearMsg();
+
+    // prefill email/token coming from email links (?email=...&token=...)
+    if (view === "verify" || view === "reset") {
+      const f = document.querySelector(`#v-${view} form`);
+      if (qs.get("email")) f.email.value = qs.get("email");
+      if (qs.get("token")) f.token.value = qs.get("token");
+    }
+    if (view === "dashboard") {
+      document.getElementById("hello").textContent = "Welcome, " + (localStorage.getItem("name") || "user");
+      document.getElementById("userEmail").textContent = localStorage.getItem("email") || "";
+    }
+  }
+  window.addEventListener("hashchange", route);
+
+  // ---------- validation ----------
+  const emailRe = /^[A-Za-z0-9._%+-]+@gmail\.com$/i;   // only @gmail.com is accepted
+  const nameRe  = /^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s.'-]*$/;
+  const phoneRe = /^\+?[0-9\s\-()]+$/;
+  const tokenRe = /^[0-9A-Fa-f]{64}$/;
+
+  // each rule returns an error message, or "" when the value is fine
+  const rules = {
+    firstName: v => !v ? "First name is required."
+      : v.length < 2 || v.length > 50 ? "First name must be 2 to 50 characters."
+      : !nameRe.test(v) ? "First name can contain only letters." : "",
+
+    lastName: v => !v ? "Last name is required."
+      : v.length < 2 || v.length > 50 ? "Last name must be 2 to 50 characters."
+      : !nameRe.test(v) ? "Last name can contain only letters." : "",
+
+    dob: v => {
+      if (!v) return "Date of birth is required.";
+      const d = new Date(v), now = new Date();
+      if (isNaN(d)) return "Enter a valid date.";
+      if (d > now) return "Date of birth cannot be in the future.";
+      if (d.getFullYear() < 1900) return "Enter a valid date of birth.";
+      return "";
+    },
+
+    gender: v => v ? "" : "Please select a gender.",
+
+    email: v => !v ? "Email is required."
+      : !emailRe.test(v) ? "Only Gmail addresses are accepted, like name@gmail.com." : "",
+
+    phoneNumber: v => {
+      if (!v) return "Phone number is required.";
+      if (!phoneRe.test(v)) return "Phone number can contain only digits, spaces, +, - and brackets.";
+      const digits = v.replace(/\D/g, "").length;
+      return digits < 10 || digits > 15 ? "Phone number must have 10 to 15 digits." : "";
+    },
+
+    token: v => !v ? "Token is required."
+      : !tokenRe.test(v) ? "Token must be the 64-character code from the email." : "",
+
+    // used on register and reset (strong rules)
+    password: (v, form) => {
+      if (!v) return "Password is required.";
+      if (form.dataset.form === "login") return "";          // login only needs a value
+      return strongPassword(v);
+    },
+    newPassword: v => !v ? "New password is required." : strongPassword(v),
+
+    confirm: (v, form) => !v ? "Please confirm your new password."
+      : v !== form.newPassword.value ? "Passwords do not match." : ""
+  };
+
+  function strongPassword(v) {
+    if (v.length < 8) return "Password must be at least 8 characters.";
+    if (v.length > 100) return "Password must be at most 100 characters.";
+    if (!/[a-z]/.test(v)) return "Password needs a lowercase letter.";
+    if (!/[A-Z]/.test(v)) return "Password needs an uppercase letter.";
+    if (!/[0-9]/.test(v)) return "Password needs a number.";
+    if (!/[^A-Za-z0-9]/.test(v)) return "Password needs a special character, like ! or @.";
+    return "";
+  }
+
+  function fieldError(input) {
+    let el = input.nextElementSibling;
+    if (!el || !el.classList.contains("field-error")) {
+      el = document.createElement("div");
+      el.className = "field-error";
+      input.insertAdjacentElement("afterend", el);
+    }
+    return el;
+  }
+
+  function validateField(input) {
+    const rule = rules[input.name];
+    if (!rule) return true;
+    const value = typeof input.value === "string" ? input.value.trim() : input.value;
+    const error = rule(value, input.form);
+    fieldError(input).textContent = error;
+    input.classList.toggle("invalid", !!error);
+    input.classList.toggle("valid", !error && !!value);
+    return !error;
+  }
+
+  function validateForm(form) {
+    let firstBad = null;
+    form.querySelectorAll("input[name], select[name]").forEach(input => {
+      if (!validateField(input) && !firstBad) firstBad = input;
+    });
+    if (firstBad) firstBad.focus();
+    return !firstBad;
+  }
+
+  // turn chosen fields red after the SERVER rejects the request (wrong password, email taken, bad token...)
+  function markServerError(formName, names) {
+    const form = document.querySelector(`form[data-form="${formName}"]`);
+    names.forEach(n => {
+      const input = form[n];
+      if (!input) return;
+      input.classList.remove("valid");
+      input.classList.remove("invalid");
+      void input.offsetWidth;                 // restart the shake animation
+      input.classList.add("invalid");
+    });
+    form[names[0]].focus();
+  }
+
+  // turn off the browser's own popups and validate live instead
+  document.querySelectorAll("form[data-form]").forEach(form => {
+    form.noValidate = true;
+    form.querySelectorAll("input[name], select[name]").forEach(input => {
+      input.addEventListener("blur", () => validateField(input));
+      input.addEventListener("input", () => {
+        if (input.classList.contains("invalid")) validateField(input);   // clear error as the user fixes it
+        if (input.name === "newPassword") {
+          const c = form.confirm;
+          if (c && c.value) validateField(c);
+        }
+      });
+    });
+  });
+
+  // ---------- form handlers ----------
+  const handlers = {
+    async login(d) {
+      const r = await postJson(API + "/login", d);
+      const x = r.data && r.data.data ? r.data.data : r.data;   // supports both response shapes
+      if (r.ok && x && x.token) {
+        localStorage.setItem("token", x.token);
+        localStorage.setItem("name", x.name || "");
+        localStorage.setItem("email", x.email || "");
+        go("dashboard");
+        return true;
+      }
+      showMsg(getMessage(r), false);
+      markServerError("login", ["email", "password"]);
+      return false;
+    },
+
+    async register(d) {
+      const r = await postJson(API + "/register", d);
+      if (r.ok) {
+        showMsg(getMessage(r), true);
+        setTimeout(() => {
+          qs.set("email", d.email);
+          document.querySelector("#v-verify form").email.value = d.email;
+          go("verify");
+        }, 1500);
+        return true;
+      }
+      showMsg(getMessage(r), false);
+      if (r.status === 409) markServerError("register", ["email"]);   // email already registered
+      return false;
+    },
+
+    async verify(d) {
+      const r = await postJson(API + "/verify-email", d);
+      if (r.ok) {
+        showMsg(getMessage(r) + " Redirecting to login...", true);
+        setTimeout(() => go("login"), 1500);
+        return true;
+      }
+      showMsg(getMessage(r), false);
+      markServerError("verify", ["token"]);
+      return false;
+    },
+
+    async forgot(d) {
+      const r = await postJson(API + "/forgot-password", d);
+      showMsg(getMessage(r), r.ok);
+      return false;
+    },
+
+    async reset(d) {
+      if (d.newPassword !== d.confirm) { showMsg("Passwords do not match.", false); return false; }
+      const r = await postJson(API + "/reset-password", {
+        email: d.email, token: d.token, newPassword: d.newPassword
+      });
+      if (r.ok) {
+        showMsg(getMessage(r) + " Redirecting to login...", true);
+        setTimeout(() => go("login"), 1500);
+        return true;
+      }
+      showMsg(getMessage(r), false);
+      markServerError("reset", ["token"]);
+      return false;
+    }
+  };
+
+  document.querySelectorAll("form[data-form]").forEach(form => {
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      clearMsg();
+      if (!validateForm(form)) return;      // stop here if any field is invalid
+      const btn = form.querySelector("button");
+      btn.disabled = true;
+      const keepDisabled = await handlers[form.dataset.form](formData(form));
+      btn.disabled = keepDisabled;
+    });
+  });
+
+  document.getElementById("logout").onclick = () => { localStorage.clear(); go("login"); };
+
+  // ---------- start ----------
+  route();
+</script>
+</body>
+</html>
